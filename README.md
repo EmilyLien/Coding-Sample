@@ -1,7 +1,7 @@
 # Coding-Sample
 A collection of work, both group and individual, from my time in the Data Science program.
 
-DL Project, clean with multi-hour predictions.ipynb: A sample of model tuning, done in Python, for a group Deep Learning project
+## DL Project, clean with multi-hour predictions.ipynb: ### A sample of model tuning, done in Python, for a group Deep Learning project
 
 Homework 2, egl6a.R: A sample of statistics work in R. Individual homework from Time Series Analysis
 
