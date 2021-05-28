@@ -1,0 +1,299 @@
+**SYS 6018 | Fall 2020 | University of Virginia **
+
+
+**Emily Lien**
+
+**egl6a**
+
+**General Discussion with: Clair McLafferty, Kip McCharen**
+*******************************************
+
+<!--- Below are global settings for knitr. You can override any of them by adding the changes to individual chunks --->
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(error=TRUE,        # Keep compiling upon error
+                      collapse=FALSE,    # collapse by default
+                      echo=TRUE,         # echo code by default
+                      comment = "#>",    # change comment character
+                      fig.width = 5,     # set figure width
+                      fig.align = "center",# set figure position
+                      out.width = "49%", # set width of displayed images
+                      warning=FALSE,     # do not show R warnings
+                      message=FALSE)     # do not show R messages
+options(dplyr.summarise.inform = FALSE)  # ignore message about group structure
+```
+
+<!--- Solution Region --->
+```{css solution-region, echo=FALSE}
+.solution {
+  background-color: #232D4B10;
+  border-style: solid;
+  border-color: #232D4B;
+  padding: .5em;
+  margin: 20px
+}
+```
+
+
+<!--- Load Required R packages here --->
+```{r formatting, include=FALSE}
+#- Better table printing
+library(kableExtra) # https://haozhu233.github.io/kableExtra/awesome_table_in_html.html
+format_table <- function(x, nmax=10) {
+  kable(x) %>% 
+    kable_styling(full_width = FALSE, font_size=11, position = "left") %>% 
+    {if(nrow(x) > nmax) scroll_box(., width = "100%", height = "200px") else .}
+}
+#- useful functions
+digits <- function(x, k=2) format(round(x, k), nsmall=k)
+#- data directory
+data.dir = 'https://mdporter.github.io/SYS6018/data/'
+#- required functions
+library(tidyverse)
+library(glmnet)
+```
+
+
+
+## Crime Linkage
+
+Crime linkage attempts to determine if two or more unsolved crimes share a common offender. *Pairwise* crime linkage is the more simple task of deciding if two crimes share a common offender; it can be considered a binary classification problem. The linkage training data has 8 evidence variables that measure the similarity between a pair of crimes:
+
+- `spatial` is the spatial distance between the crimes
+- `temporal` is the fractional time (in days) between the crimes
+- `tod` and `dow` are the differences in time of day and day of week between the crimes
+- `LOC`, `POA,` and `MOA` are binary with a 1 corresponding to a match (type of property, point of entry, method of entry)
+- `TIMERANGE` is the time between the earliest and latest possible times the crime could have occurred (because the victim was away from the house during the crime).
+- The response variable indicates if the crimes are linked ($y=1$) or unlinked ($y=0$).
+
+
+These problems use the [linkage-train](https://mdporter.github.io/SYS6018/data/linkage_train.csv) and [linkage-test](https://mdporter.github.io/SYS6018/data/linkage_test.csv) datasets (click on links for data). 
+
+
+### Problem 4.1: Penalized Regression for Crime Linkage
+
+a. Fit a penalized *linear regression* model. Use a lasso, ridge, or elasticnet penalty (your choice). 
+    - Report the value of $\alpha$ used (if elasticnet)
+    - Report the value of $\lambda$ used
+    - Report the estimated coefficients
+
+
+<div class="solution"> 
+
+```{r}
+#load data sets
+Building <-read.csv("linkage_train.csv",header=TRUE,sep=",") 
+Competition <-read.csv("linkage_test.csv",header=TRUE,sep=",")
+
+#split the training data for model building nd validation
+slice<- sample(seq_len(nrow(Building)),size = nrow(Building)/3)
+train<- Building[-slice, ]
+test<-Building[slice, ]
+
+X.train = train %>% select(-y)
+Y.train = train %>% select(y)
+
+X.test = test %>% select(-y)
+Y.test= test %>% select(y)
+
+X.trainM <- makeX(X.train)
+Y.trainM<-makeX(Y.train)
+
+X.testM <- makeX(X.test)
+Y.testM<-makeX(Y.test)
+
+#Fitting penalized linear regression, lasso regression
+set.seed(199)
+MSE<-0
+
+t<-list(0,.1,.2,.3,.4,.5,.6,.7,.8,.9,1)
+
+K = 10
+folds = rep(1:K, length=nrow(X.train))
+
+linear<-cv.glmnet(X.trainM,Y.trainM,alpha=1, foldid=folds)
+
+for (i in 1:11){
+  yhat<-predict(linear, newx = X.testM, s="lambda.min")
+  yhatH<- ifelse(yhat>=t[i],1,0)
+  MSE[i]<-mean((Y.testM-yhatH)^2)
+  
+}
+#best results at threshold of .1
+
+yhat1<-predict(linear, newx = X.testM, s="lambda.min")
+yhatH1<-ifelse(yhat1>=.1,1,0)
+
+MSE1<-mean((Y.testM - yhatH1)^2)
+
+#MSE1 = 0.0209
+#lambda.min =0.002503472
+```
+Model coefficients
+(Intercept)  3.900672e-02
+spatial     -6.334892e-04
+temporal    -4.229561e-05
+tod         -6.566398e-04
+dow         -1.887541e-03
+LOC          1.169589e-02
+POA          3.173312e-03
+MOA          1.932297e-03
+TIMERANGE    7.312556e-06
+</div>
+
+
+b. Fit a penalized *logistic regression* model. Use a lasso, ridge, or elasticnet penalty (your choice).  
+    - Report the value of $\alpha$ used (if elasticnet)
+    - Report the value of $\lambda$ used
+    - Report the estimated coefficients
+
+<div class="solution"> 
+```{r}
+#logistic regression
+MSE2<-0
+logistic<-cv.glmnet(X.trainM,Y.trainM,alpha=1,family="binomial",foldid=folds)
+for (i in 1:11){
+  yhatlog<-predict(logistic, newx = X.testM, s="lambda.min")
+  yhatHlog<- ifelse(yhatlog>=t[i],1,0)
+  MSE2[i]<-mean((Y.testM-yhatHlog)^2)
+  
+}
+
+#threshold of .1 again
+yhatlog1<-predict(logistic, newx = X.testM, s="lambda.min")
+yhatHlog1<- ifelse(yhatlog1>=.1,1,0)
+```
+lambda.min=0.002503472
+Coefficients:
+(Intercept) -1.1878615089
+spatial     -0.1303081653
+temporal    -0.0077012781
+tod         -0.0923040581
+dow         -0.2684708091
+LOC          1.2698388715
+POA          0.3929547331
+MOA          0.1567043756
+TIMERANGE    0.0005179679
+</div>
+
+c. Produce one plot that has the ROC curves, using the *training data*, for both models (from part a and b). Use color and/or linetype to distinguish between models and include a legend.    
+
+<div class="solution"> 
+```{r}
+#producing ROC curves
+library(ROCR)
+rates<-prediction(yhatHlog1, test$y)
+roc_result<-performance(rates,measure="tpr", x.measure="fpr")
+plot(roc_result, main="ROC Curve for linkage data set",col="green")
+lines(x = c(0,1), y = c(0,1), col="purple")
+
+rates<-prediction(yhatHlog, test$y)
+roc_result1<-performance(rates,measure="tpr", x.measure="fpr")
+plot(roc_result1,add=TRUE, main="ROC Curve for linkage data set",col="orange")
+lines(x = c(0,1), y = c(0,1), col="purple")
+
+legend("topleft", c("logistic", "linear"), 
+       col=c("green", "orange"), lty=1)
+```
+Creating ROC curves: Stats notes
+getting multiple ROC curves in one plot: https://stackoverflow.com/questions/14085281/multiple-roc-curves-in-one-plot-rocr
+</div>
+
+
+d. Recreate the ROC curve from the penalized logistic regression model using repeated hold-out data. The following steps will guide you:
+    - Fix $\alpha=.75$ 
+    - Run the following steps 25 times:
+    i. Hold out 500 observations
+    ii. Use the remaining observations to estimate $\lambda$ 
+    iii. Predict the probability of the 500 hold-out observations
+    iv. Store the predictions and hold-out labels
+    - Combine the results and produce the hold-out based ROC curve
+    - Note: by estimating $\lambda$ each iteration, we are incorporating the uncertainty present in estimating that tuning parameter. 
+    
+<div class="solution"> 
+```{r}
+#step 1:
+alpha=.75
+#step 2: Run the following 25 times
+N = 25
+obs<-tibble("y_hat"=NA,"y_true"=NA)
+
+#hold-out 500 observations
+for (i in 1:N){
+  #holding out 500 observations
+  sliceRH<- sample(seq_len(nrow(Building)),size = nrow(Building)/60)
+  trainRH<- Building[-sliceRH, ]
+  testRH<-Building[sliceRH, ]
+  X.trainRH = trainRH %>% select(-y)
+  Y.trainRH = trainRH %>% select(y)
+  
+  X.testRH = testRH %>% select(-y)
+  Y.testRH= testRH %>% select(y)
+  
+  X.trainMRH <- makeX(X.trainRH)
+  Y.trainMRH<-makeX(Y.trainRH)
+  
+  X.testMRH <- makeX(X.testRH)
+  Y.testMRH<-makeX(Y.testRH)
+  
+  #fitting a logistic model to get lambdas
+  logisticRH<-cv.glmnet(X.trainMRH,Y.trainMRH,alpha=alpha,family="binomial") #it didn't like it when I tried to set the folds????
+  y_hat<-predict(logisticRH, newx = X.testMRH, s="lambda.min")
+  y_true<-testRH$y
+  loop<-tibble("y_hat"=y_hat,"y_true"=y_true)
+  obs<-bind_rows(obs,loop)
+}
+obs$y_hat<-ifelse(obs$y_hat>=.1,1,0)
+obs<-obs[-c(1),]
+ratesRH<-prediction(obs$y_hat, obs$y_true)
+roc_resultRH<-performance(ratesRH,measure="tpr", x.measure="fpr")
+plot(roc_resultRH, main="ROC Curve, Repeated Hold-Outs")
+lines(x = c(0,1), y = c(0,1), col="purple")
+```
+</div>
+
+
+e. Contest Part 1: Predict the estimated *probability* of linkage for the test data (using any model). 
+    - Submit a .csv file (ensure comma separated format) named `lastname_firstname_1.csv` that includes the column named **p** that is your estimated posterior probability. We will use automated evaluation, so the format must be exact. 
+    - You are free to use any tuning parameters
+    - You are free to use any data transformation or feature engineering
+    - You will receive credit for a proper submission; the top five scores will receive 2 bonus points.     
+    - Your probabilities will be evaluated with respect to the mean negative Bernoulli log-likelihood (known as the average *log-loss* metric)
+$$ 
+L = - \frac{1}{M} \sum_{i=1}^m [y_i \log \, \hat{p}_i + (1 - y_i) \log \, (1 - \hat{p}_i)]
+$$
+where $M$ is the number of test observations, $\hat{p}_i$ is the prediction for the $i$th test observation, and $y_i \in \{0,1\}$ are the true test set labels. 
+
+<div class="solution"> 
+```{r}
+#None of the predictor variables seem to be correlatedt
+cor(Competition)
+TEST<-makeX(Competition)
+logComp<-cv.glmnet(X.trainM,Y.trainM,alpha=alpha,family="binomial",foldid=folds)
+p<-predict(logComp, newx = TEST, s="lambda.min")
+P<-tibble("p"=p)
+write.csv(P,"lien_emily_1.csv")
+```
+</div>
+
+
+f. Contest Part 2: Predict the linkages for the test data (using any model). 
+    - Submit a .csv file (ensure comma separated format) named `lastname_firstname_2.csv` that includes the column named **link** that takes the value of 1 for linkages and 0 for unlinked pairs. We will use automated evaluation, so the format must be exact. 
+    - You are free to use any tuning parameters.
+    - You are free to use any data transformation or feature engineering.
+    - Your labels will be evaluated based on total cost, where cost is equal to `1*FP + 8*FN`. This implies that False Negatives (FN) are 8 times as costly as False Negatives (FP)    
+    - You will receive credit for a proper submission; the top five scores will receive 2 bonus points. Note: you only will get bonus credit for one of the two contests. 
+
+<div class="solution"> 
+```{r}
+Link<-ifelse(p>=.1, 1,0)
+link<-tibble("link"=Link)
+write.csv(link,"lien_emily_2.csv")
+```
+</div>
+
+
+
+
+
+
